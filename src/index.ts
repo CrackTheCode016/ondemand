@@ -1,52 +1,119 @@
 // `dot` is the name we gave to `npx papi add`
-import { assethub, custom } from "@polkadot-api/descriptors"
+import { polkadot } from "@polkadot-api/descriptors"
 import { createClient, PolkadotClient } from "polkadot-api"
-import { getSmProvider } from "polkadot-api/sm-provider";
 import { getWsProvider } from "polkadot-api/ws-provider/node";
-import { chainSpec } from "polkadot-api/chains/polkadot_asset_hub";
-import { chainSpec as relayChainSpec } from "polkadot-api/chains/polkadot";
-import { start } from "polkadot-api/smoldot";
 import { withPolkadotSdkCompat } from "polkadot-api/polkadot-sdk-compat";
+import { OnDemandConfiguration, OrderingMode } from "./types";
+import fs from "fs";
+import { getPolkadotSigner } from "polkadot-api/signer";
+import { ed25519, sr25519 } from "@polkadot-labs/hdkd-helpers";
+import { fromHex } from "polkadot-api/utils";
 
-async function withLightClient(): Promise<PolkadotClient> {
-    // Start the light client
-    const smoldot = start();
-    // The Polkadot Relay Chain
-    const relayChain = await smoldot.addChain({ chainSpec: relayChainSpec })
-    // Polkadot AssetHub - we include the relay chain as a "potential relay chain", as this is part of smoldot to check the chainspec for what relay chain a parachain uses
-    const assetHub = await smoldot.addChain({ chainSpec, potentialRelayChains: [relayChain] });
-    // Combine it and make a client!
-    return createClient(
-        getSmProvider(assetHub)
-    );
-}
 async function withWebSocket(url: string): Promise<PolkadotClient> {
     return createClient(
-        // Polkadot-SDK Nodes have issues, we recommend adding this enhancer
-        // see Requirements page for more info
         withPolkadotSdkCompat(
-            getWsProvider("ws://localhost:9944")
+            getWsProvider(url)
         )
     );
 }
 
-async function main() {
-    // For custom chain options, uncomment the following and add your custom URL (such as: localhost). You may also comment out the above client in this case.
-    const wsClient = await withWebSocket("ws://localhost:9944");
-    const lightClient = await withLightClient();
-
-    // To interact with the chain, you need to get the `TypedApi`, which includes
-    // all the types for every call in that chain:
-
-    // Note, if you want to use a custom chain, you must change it to the name of the metadata from PAPI (see README for more details).
-    // You must also use the "wsClient" instead.
-    const dotApi = lightClient.getTypedApi(assethub);
-    // For example, with a custom chain:
-    // const dotApi = wsClient.getTypedApi(custom);
-
-    // Then, you can make calls like this...
-    const last_runtime_upgrade = await dotApi.query.System.LastRuntimeUpgrade.getValue();
-    console.log(last_runtime_upgrade)
+async function parseConfiguration(path: string): Promise<OnDemandConfiguration> {
+    // Read the configuration file
+    const file = await fs.promises.readFile(path, "utf-8");
+    return JSON.parse(file);
 }
 
-main()
+async function getRelayChainUrl(relayChain: string): Promise<string> {
+    // Map the relay chain name to its corresponding WebSocket URL
+    const relayChainUrls: { [key: string]: string } = {
+        kusama: "wss://kusama-rpc.polkadot.io",
+        polkadot: "wss://polkadot.api.onfinality.io/public-ws",
+        westend: "wss://westend.api.onfinality.io/public-ws",
+        paseo: "wss://paseo.rpc.amforc.com:443",
+    };
+    // Check if the relay chain is supported
+    if (!relayChainUrls[relayChain]) {
+        throw new Error(`Unsupported relay chain: ${relayChain}`);
+    }
+    // Return the WebSocket URL for the specified relay chain  
+    return relayChainUrls[relayChain];
+}
+
+async function orderCoretime(
+    relayChainClient: PolkadotClient,
+    parachainId: number,
+    maxAmount: number,
+    privateKey: string) {
+
+    const hexPrivateKey = fromHex(privateKey);
+    const account = getPolkadotSigner(
+        ed25519.getPublicKey(hexPrivateKey),
+        "Ed25519",
+        (input) => ed25519.sign(input, hexPrivateKey)
+    );
+
+    const relayChainApi = relayChainClient.getTypedApi(polkadot);
+    return relayChainApi.tx.OnDemand.place_order_keep_alive(
+        {
+            para_id: parachainId,
+            max_amount: BigInt(maxAmount)
+        }
+    ).signSubmitAndWatch(account);
+}
+
+// Main function to watch the relay chain and parachain and order coretime based on the mode
+export async function watch(configPath: string, mode: OrderingMode): Promise<void> {
+    // Parse the configuration file
+    const config = await parseConfiguration(configPath);
+    console.log(`Configuration loaded for parachain ${config.parachainId}, ordering from ${config.relayChain}...`);
+    console.log(`Ordering Mode: ${mode}`);
+
+    const relayChainUrl = await getRelayChainUrl(config.relayChain);
+    let maxBlockCounter = 0;
+    let currentlyOrdering = false;
+    console.log(`Connecting to relay chain: ${config.relayChain}`);
+    // Create a client to connect to the relay chain
+    const wsParachainClient = await withWebSocket(config.parachainRpcUrl);
+    // Get the WebSocket URL for the specified relay chain
+    const wsRelayChainClient = await withWebSocket(relayChainUrl);
+
+    if (mode === OrderingMode.Block) {
+        wsRelayChainClient.finalizedBlock$.subscribe(async (block) => {
+            // Check if the block is a finalized block
+            console.log(`New finalized block: ${block.number}`);
+            maxBlockCounter++;
+            // Check if the current block number is greater than the maximum allowed blocks
+            if (maxBlockCounter > config.maxBlocks && !currentlyOrdering) {
+                currentlyOrdering = true;
+                console.log(`Time to order more coretime!`);
+                // Call the function to order coretime
+                (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountPrivateKey)).subscribe((result) => {
+                    if (result.type === "finalized") {
+                        console.log(`Coretime order finalized: ${result.txHash}`);
+                        console.log(`Parachain: ${config.parachainId}`);
+                        maxBlockCounter = 0;
+                        currentlyOrdering = false;
+                    }
+                });
+            }
+        })
+    } else if (mode === OrderingMode.TransactionPool) {
+        console.log(`Watching transaction pool...`);
+        setInterval(async () => {
+            // Check the transaction pool every 10 seconds
+            const ext = await wsParachainClient._request("author_pendingExtrinsics", []);
+            console.log(`Transaction pool size: ${ext.length}`);
+            if (ext.length >= config.maxTransactions && !currentlyOrdering) {
+                console.log(`Time to order more coretime!`);
+                currentlyOrdering = true;
+                (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountPrivateKey)).subscribe((result) => {
+                    if (result.type === "finalized") {
+                        console.log(`Coretime order finalized: ${result.txHash}`);
+                        console.log(`Parachain: ${config.parachainId}`);
+                        currentlyOrdering = false;
+                    }
+                });
+            }
+        }, 10000);
+    }
+}

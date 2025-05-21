@@ -1,0 +1,9 @@
+{
+    "relayChain": "paseo",
+    "parachainRpcUrl": "wss://rpc.web3educhain.xyz:443",
+    "maxBlocks": 2,
+    "accountPrivateKey": "",
+    "maxAmount": 1000000000000,
+    "maxTransactions": 1,
+    "parachainId": 4518
+}
