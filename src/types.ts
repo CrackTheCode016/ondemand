@@ -30,4 +30,6 @@ export interface OnDemandConfiguration {
     maxTransactions: number;
     // Parachain ID
     parachainId: number;
+    // The interval in ms to check the transaction pool
+    checkIntervalMs: number;
 }

@@ -20,6 +20,7 @@
     "@polkadot-api/descriptors": "file:.papi/descriptors",
     "@polkadot-labs/hdkd-helpers": "^0.0.15",
     "commander": "^14.0.0",
-    "polkadot-api": "^1.8.1"
+    "polkadot-api": "^1.8.1",
+    "rxjs": "^7.8.2"
   }
 }

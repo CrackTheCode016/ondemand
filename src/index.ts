@@ -9,7 +9,7 @@ import { getPolkadotSigner } from "polkadot-api/signer";
 import { ed25519, sr25519 } from "@polkadot-labs/hdkd-helpers";
 import { fromHex } from "polkadot-api/utils";
 import { RELAY_CHAIN_URLS } from "./relay_urls";
-import { get } from "http";
+import { Observable } from "rxjs";
 
 async function withWebSocket(url: string[]): Promise<PolkadotClient> {
     return createClient(
@@ -59,57 +59,52 @@ async function orderCoretime(
 
 // Main function to watch the relay chain and parachain and order coretime based on the mode
 export async function watch(configPath: string, mode: OrderingMode): Promise<void> {
-    // Parse the configuration file
     const config = await parseConfiguration(configPath);
     console.log(`Configuration loaded for parachain ${config.parachainId}, ordering from ${config.relayChain}...`);
     console.log(`Ordering Mode: ${mode}`);
 
     const relayChainUrl = await getRelayChainUrl(config.relayChain);
-    let maxBlockCounter = 0;
-    let currentlyOrdering = false;
-    console.log(`Connecting to relay chain: ${config.relayChain}`);
-    // Create a client to connect to the relay chain
+    let blockCounter = 0;
+    let ordering = false;
+
     const wsParachainClient = await withWebSocket(config.parachainRpcUrls);
-    // Get the WebSocket URL for the specified relay chain
     const wsRelayChainClient = await withWebSocket(relayChainUrl);
+
+    const tryOrderCoretime = async () => {
+        ordering = true;
+        console.log(`Time to order more coretime!`);
+        (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountPrivateKey))
+            .pipe()
+            .subscribe((result) => {
+                if (result.type === "finalized") {
+                    console.log(`Coretime order finalized: ${result.txHash}`);
+                    console.log(`Parachain: ${config.parachainId}`);
+                    blockCounter = 0;
+                    ordering = false;
+                }
+            });
+    };
 
     if (mode === OrderingMode.Block) {
         wsRelayChainClient.finalizedBlock$.subscribe(async (block) => {
-            // Check if the block is a finalized block
             console.log(`New finalized block: ${block.number}`);
-            maxBlockCounter++;
-            // Check if the current block number is greater than the maximum allowed blocks
-            if (maxBlockCounter > config.maxBlocks && !currentlyOrdering) {
-                currentlyOrdering = true;
-                console.log(`Time to order more coretime!`);
-                // Call the function to order coretime
-                (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountPrivateKey)).subscribe((result) => {
-                    if (result.type === "finalized") {
-                        console.log(`Coretime order finalized: ${result.txHash}`);
-                        console.log(`Parachain: ${config.parachainId}`);
-                        maxBlockCounter = 0;
-                        currentlyOrdering = false;
-                    }
-                });
+            blockCounter++;
+            if (blockCounter > config.maxBlocks && !ordering) {
+                await tryOrderCoretime();
             }
-        })
-    } else if (mode === OrderingMode.TransactionPool) {
+        });
+        return;
+    }
+
+    if (mode === OrderingMode.TransactionPool) {
         console.log(`Watching transaction pool...`);
         setInterval(async () => {
-            // Check the transaction pool every 10 seconds
             const ext = await wsParachainClient._request("author_pendingExtrinsics", []);
             console.log(`Transaction pool size: ${ext.length}`);
-            if (ext.length >= config.maxTransactions && !currentlyOrdering) {
-                console.log(`Time to order more coretime!`);
-                currentlyOrdering = true;
-                (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountPrivateKey)).subscribe((result) => {
-                    if (result.type === "finalized") {
-                        console.log(`Coretime order finalized: ${result.txHash}`);
-                        console.log(`Parachain: ${config.parachainId}`);
-                        currentlyOrdering = false;
-                    }
-                });
+            if (ext.length >= config.maxTransactions && !ordering) {
+                await tryOrderCoretime();
             }
-        }, 30000);
+        }, config.checkIntervalMs);
+        return;
     }
 }
