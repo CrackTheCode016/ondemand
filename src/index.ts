@@ -8,8 +8,10 @@ import fs from "fs";
 import { getPolkadotSigner } from "polkadot-api/signer";
 import { ed25519, sr25519 } from "@polkadot-labs/hdkd-helpers";
 import { fromHex } from "polkadot-api/utils";
+import { RELAY_CHAIN_URLS } from "./relay_urls";
+import { get } from "http";
 
-async function withWebSocket(url: string): Promise<PolkadotClient> {
+async function withWebSocket(url: string[]): Promise<PolkadotClient> {
     return createClient(
         withPolkadotSdkCompat(
             getWsProvider(url)
@@ -23,20 +25,14 @@ async function parseConfiguration(path: string): Promise<OnDemandConfiguration> 
     return JSON.parse(file);
 }
 
-async function getRelayChainUrl(relayChain: string): Promise<string> {
+async function getRelayChainUrl(relayChain: string): Promise<string[]> {
     // Map the relay chain name to its corresponding WebSocket URL
-    const relayChainUrls: { [key: string]: string } = {
-        kusama: "wss://kusama-rpc.polkadot.io",
-        polkadot: "wss://polkadot.api.onfinality.io/public-ws",
-        westend: "wss://westend.api.onfinality.io/public-ws",
-        paseo: "wss://paseo.rpc.amforc.com:443",
-    };
     // Check if the relay chain is supported
-    if (!relayChainUrls[relayChain]) {
+    if (!RELAY_CHAIN_URLS[relayChain]) {
         throw new Error(`Unsupported relay chain: ${relayChain}`);
     }
     // Return the WebSocket URL for the specified relay chain  
-    return relayChainUrls[relayChain];
+    return RELAY_CHAIN_URLS[relayChain];
 }
 
 async function orderCoretime(
@@ -73,7 +69,7 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
     let currentlyOrdering = false;
     console.log(`Connecting to relay chain: ${config.relayChain}`);
     // Create a client to connect to the relay chain
-    const wsParachainClient = await withWebSocket(config.parachainRpcUrl);
+    const wsParachainClient = await withWebSocket(config.parachainRpcUrls);
     // Get the WebSocket URL for the specified relay chain
     const wsRelayChainClient = await withWebSocket(relayChainUrl);
 
@@ -114,6 +110,6 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
                     }
                 });
             }
-        }, 10000);
+        }, 30000);
     }
 }

@@ -19,7 +19,7 @@ export interface OnDemandConfiguration {
     // The name of the relay chain you want to connect to
     relayChain: RelayChain;
     // The name of the parachain you want to connect to
-    parachainRpcUrl: string;
+    parachainRpcUrls: string[];
     // The maximum number of blocks that the relaychain can advance without the parachain ever producing a block
     maxBlocks: number;
     // The private key of the account that will hold the funds on the relay chain to execute the purchase of the onDemand coretime
