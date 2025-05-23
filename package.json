@@ -1,5 +1,5 @@
 {
-  "name": "polkadot-api-ts-boilerplate",
+  "name": "ondemand-polkadot-tool",
   "version": "1.0.0",
   "description": "A place to quickly get started with Polkadot API",
   "license": "ISC",
@@ -21,7 +21,6 @@
     "@polkadot-labs/hdkd": "^0.0.15",
     "@polkadot-labs/hdkd-helpers": "^0.0.15",
     "commander": "^14.0.0",
-    "polkadot-api": "^1.8.1",
-    "rxjs": "^7.8.2"
+    "polkadot-api": "^1.8.1"
   }
 }
