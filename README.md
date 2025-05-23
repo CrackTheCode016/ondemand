@@ -22,25 +22,19 @@ curl -fsSL https://bun.sh/install | bash
 
 Run the CLI to start monitoring and ordering coretime:
 
-```sh
-bun run cli -- --config ./config.json --mode block
-```
-
 - `--config <path>`: Path to your configuration JSON file (default: `./config.json`)
 - `--mode <mode>`: Ordering mode, either `block` or `transaction_pool` (default: `block`)
-
-### Example
 
 Order coretime when a maximum number of blocks have passed without parachain activity:
 
 ```sh
-bun run cli -- --config ./config.json --mode block
+bun run ondemand:block
 ```
 
 Order coretime when the transaction pool reaches a certain size:
 
 ```sh
-bun run cli -- --config ./config.json --mode transaction_pool
+bun run ondemand:txpool
 ```
 
 ## Configuration

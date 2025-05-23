@@ -10,7 +10,9 @@
     "build": "tsc",
     "start": "tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node ./dist/index.js\"",
     "postinstall": "npx papi",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "ondemand:block": "tsc && node ./dist/cli --config ./config.json --mode block",
+    "ondemand:txpool": "tsc && node ./dist/cli --config ./config.json --mode txpool"
   },
   "devDependencies": {
     "tsc-watch": "^6.2.1",
