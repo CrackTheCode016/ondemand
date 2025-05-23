@@ -4,12 +4,11 @@ import { createClient, PolkadotClient } from "polkadot-api"
 import { getWsProvider } from "polkadot-api/ws-provider/node";
 import { withPolkadotSdkCompat } from "polkadot-api/polkadot-sdk-compat";
 import { OnDemandConfiguration, OrderingMode } from "./types";
-import fs from "fs";
 import { getPolkadotSigner } from "polkadot-api/signer";
-import { ed25519, sr25519 } from "@polkadot-labs/hdkd-helpers";
-import { fromHex } from "polkadot-api/utils";
 import { RELAY_CHAIN_URLS } from "./relay_urls";
-import { Observable } from "rxjs";
+import fs from "fs";
+import { entropyToMiniSecret, mnemonicToEntropy, sr25519, } from "@polkadot-labs/hdkd-helpers";
+import { sr25519CreateDerive } from "@polkadot-labs/hdkd";
 
 async function withWebSocket(url: string[]): Promise<PolkadotClient> {
     return createClient(
@@ -39,13 +38,15 @@ async function orderCoretime(
     relayChainClient: PolkadotClient,
     parachainId: number,
     maxAmount: number,
-    privateKey: string) {
-
-    const hexPrivateKey = fromHex(privateKey);
+    mnemonic: string) {
+    const entropy = mnemonicToEntropy(mnemonic);
+    const miniSecret = entropyToMiniSecret(entropy)
+    const derive = sr25519CreateDerive(miniSecret)
+    console.log(derive(''))
     const account = getPolkadotSigner(
-        ed25519.getPublicKey(hexPrivateKey),
-        "Ed25519",
-        (input) => ed25519.sign(input, hexPrivateKey)
+        derive('').publicKey,
+        "Sr25519",
+        (input) => derive('').sign(input)
     );
 
     const relayChainApi = relayChainClient.getTypedApi(polkadot);
@@ -73,7 +74,7 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
     const tryOrderCoretime = async () => {
         ordering = true;
         console.log(`Time to order more coretime!`);
-        (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountPrivateKey))
+        (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountMnemonic))
             .pipe()
             .subscribe((result) => {
                 if (result.type === "finalized") {

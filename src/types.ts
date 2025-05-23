@@ -23,7 +23,7 @@ export interface OnDemandConfiguration {
     // The maximum number of blocks that the relaychain can advance without the parachain ever producing a block
     maxBlocks: number;
     // The private key of the account that will hold the funds on the relay chain to execute the purchase of the onDemand coretime
-    accountPrivateKey: string;
+    accountMnemonic: string;
     // How much is the user willing to spend at most for having one more block validated on the relay chain
     maxAmount: number;
     // The maximum number of transactions in the pool before coretime is ordered
