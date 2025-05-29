@@ -10,6 +10,7 @@ program.version("0.0.1")
 
 const options = program.opts();
 const mode = options.mode as OrderingMode;
+
 watch(options.config, mode).then(() => {
     console.log("Configuration successfully loaded. Watching both chains for new blocks...");
 }).catch((error: any) => {

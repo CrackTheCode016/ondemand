@@ -42,7 +42,6 @@ async function orderCoretime(
     const entropy = mnemonicToEntropy(mnemonic);
     const miniSecret = entropyToMiniSecret(entropy)
     const derive = sr25519CreateDerive(miniSecret)
-    console.log(derive(''))
     const account = getPolkadotSigner(
         derive('').publicKey,
         "Sr25519",
@@ -58,6 +57,13 @@ async function orderCoretime(
     ).signSubmitAndWatch(account);
 }
 
+function watchCoretimeQueue(
+    relayChainClient: PolkadotClient,
+    parachainId: number) {
+    const relayChainApi = relayChainClient.getTypedApi(polkadot);
+    return relayChainApi.query.OnDemand.ParaIdAffinity.watchValue(parachainId);
+}
+
 // Main function to watch the relay chain and parachain and order coretime based on the mode
 export async function watch(configPath: string, mode: OrderingMode): Promise<void> {
     const config = await parseConfiguration(configPath);
@@ -67,12 +73,26 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
     const relayChainUrl = await getRelayChainUrl(config.relayChain);
     let blockCounter = 0;
     let ordering = false;
+    let coreInQueue = false;
+
+    // Watch the coretime queue
 
     const wsParachainClient = await withWebSocket(config.parachainRpcUrls);
     const wsRelayChainClient = await withWebSocket(relayChainUrl);
 
+    watchCoretimeQueue(wsRelayChainClient, config.parachainId).subscribe((result) => {
+        console.log("Watching coretime queue...");
+        if (result) {
+            console.log(`Core ${result.core_index} being used`);
+        } else {
+            console.log(`Core no longer in use.`);
+            coreInQueue = false;
+        }
+    })
+
     const tryOrderCoretime = async () => {
         ordering = true;
+        coreInQueue = true;
         console.log(`Time to order more coretime!`);
         (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountMnemonic))
             .pipe()
@@ -90,22 +110,25 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
         wsRelayChainClient.finalizedBlock$.subscribe(async (block) => {
             console.log(`New finalized block: ${block.number}`);
             blockCounter++;
-            if (blockCounter > config.maxBlocks && !ordering) {
+            if (blockCounter >= config.maxBlocks && !ordering && !coreInQueue) {
                 await tryOrderCoretime();
             }
         });
-        return;
     }
 
     if (mode === OrderingMode.TransactionPool) {
         console.log(`Watching transaction pool...`);
-        setInterval(async () => {
-            const ext = await wsParachainClient._request("author_pendingExtrinsics", []);
-            console.log(`Transaction pool size: ${ext.length}`);
-            if (ext.length >= config.maxTransactions && !ordering) {
-                await tryOrderCoretime();
-            }
-        }, config.checkIntervalMs);
-        return;
+        setInterval(orderTxPoolCoretime, config.checkIntervalMs);
+    }
+}
+
+async function orderTxPoolCoretime(parachainClient: PolkadotClient, relayChainClient: PolkadotClient, config: OnDemandConfiguration, ordering: boolean, coreInQueue: boolean) {
+    console.log(ordering, coreInQueue);
+    if (!ordering && !coreInQueue) {
+        const ext = await parachainClient._request("author_pendingExtrinsics", []);
+        console.log(`Transaction pool size: ${ext.length}`);
+        if (ext.length >= config.maxTransactions) {
+            await orderCoretime(relayChainClient, config.parachainId, config.maxAmount, config.accountMnemonic);
+        }
     }
 }

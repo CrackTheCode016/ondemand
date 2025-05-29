@@ -17,6 +17,14 @@
     "kusama": {
       "chain": "ksmcc3",
       "metadata": ".papi/metadata/kusama.scale"
+    },
+    "pas": {
+      "chain": "paseo",
+      "metadata": ".papi/metadata/pas.scale"
+    },
+    "edu": {
+      "wsUrl": "wss://rpc.web3educhain.xyz:443",
+      "metadata": ".papi/metadata/edu.scale"
     }
   }
 }

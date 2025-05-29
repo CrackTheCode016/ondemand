@@ -3,10 +3,10 @@
     "parachainRpcUrls": [
         "wss://rpc.web3educhain.xyz:443"
     ],
-    "maxBlocks": 2,
-    "accountMnemonic": "",
+    "maxBlocks": 3,
+    "accountMnemonic": "bottom drive obey lake curtain smoke basket hold race lonely fit walk",
     "maxAmount": 1000000000000,
-    "maxTransactions": 1,
+    "maxTransactions": 3,
     "parachainId": 4518,
-    "checkIntervalMs": 30000
+    "checkIntervalMs": 5000
 }

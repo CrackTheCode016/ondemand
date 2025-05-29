@@ -1,3 +1,5 @@
 node_modules/
 dist/
 dev_config.json
+config.json
+test/
