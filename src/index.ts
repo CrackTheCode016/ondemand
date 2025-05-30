@@ -76,7 +76,6 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
     let coreInQueue = false;
 
     // Watch the coretime queue
-
     const wsParachainClient = await withWebSocket(config.parachainRpcUrls);
     const wsRelayChainClient = await withWebSocket(relayChainUrl);
 
@@ -108,7 +107,6 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
 
     if (mode === OrderingMode.Block) {
         wsRelayChainClient.finalizedBlock$.subscribe(async (block) => {
-            console.log(`New finalized block: ${block.number}`);
             blockCounter++;
             if (blockCounter >= config.maxBlocks && !ordering && !coreInQueue) {
                 await tryOrderCoretime();
@@ -117,18 +115,17 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
     }
 
     if (mode === OrderingMode.TransactionPool) {
-        console.log(`Watching transaction pool...`);
-        setInterval(orderTxPoolCoretime, config.checkIntervalMs);
-    }
-}
-
-async function orderTxPoolCoretime(parachainClient: PolkadotClient, relayChainClient: PolkadotClient, config: OnDemandConfiguration, ordering: boolean, coreInQueue: boolean) {
-    console.log(ordering, coreInQueue);
-    if (!ordering && !coreInQueue) {
-        const ext = await parachainClient._request("author_pendingExtrinsics", []);
-        console.log(`Transaction pool size: ${ext.length}`);
-        if (ext.length >= config.maxTransactions) {
-            await orderCoretime(relayChainClient, config.parachainId, config.maxAmount, config.accountMnemonic);
-        }
+        console.log(`Watching transaction pool for ${config.maxTransactions} transactions...`);
+        console.log("Ordering initial block...")
+        await tryOrderCoretime();
+        setInterval(async () => {
+            if (!ordering && !coreInQueue) {
+                const ext = await wsParachainClient._request("author_pendingExtrinsics", []);
+                console.log(`Transaction pool size: ${ext.length}`);
+                if (ext.length >= config.maxTransactions) {
+                    await tryOrderCoretime()
+                }
+            }
+        }, config.checkIntervalMs);
     }
 }

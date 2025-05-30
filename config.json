@@ -6,7 +6,7 @@
     "maxBlocks": 3,
     "accountMnemonic": "bottom drive obey lake curtain smoke basket hold race lonely fit walk",
     "maxAmount": 1000000000000,
-    "maxTransactions": 3,
+    "maxTransactions": 2,
     "parachainId": 4518,
     "checkIntervalMs": 5000
 }
