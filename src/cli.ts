@@ -1,6 +1,7 @@
 import { program } from "commander";
 import { watch } from "./index";
 import { OrderingMode } from "./coretime/types";
+import { parseConfiguration } from "./helper";
 
 program.version("0.0.1")
     .description("CLI for ordering on-demand coretime for parachains")
@@ -11,7 +12,9 @@ program.version("0.0.1")
 const options = program.opts();
 const mode = options.mode as OrderingMode;
 
-watch(options.config, mode).then(() => {
+parseConfiguration(options.config).then((config) => {
+    return watch(config, mode)
+}).then(() => {
     console.log("Configuration successfully loaded. Watching both chains for new blocks...");
 }).catch((error: any) => {
     console.error("Error starting service:", error);

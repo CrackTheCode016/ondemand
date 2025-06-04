@@ -1,7 +1,7 @@
 // `dot` is the name we gave to `npx papi add`
 import { polkadot } from "@polkadot-api/descriptors"
 import { PolkadotClient } from "polkadot-api"
-import { CoretimeOrderState, OrderingMode } from "./coretime/types";
+import { CoretimeOrderState, OnDemandConfiguration, OrderingMode } from "./coretime/types";
 import { CoretimeOrderingStrategy } from "./coretime/strategy";
 import { BlockOrderingStrategy } from "./coretime/block";
 import { TxPoolOrderingStrategy } from "./coretime/txpool";
@@ -15,8 +15,7 @@ function watchCoretimeQueue(
 }
 
 // Main function to watch the relay chain and parachain and order coretime based on the mode
-export async function watch(configPath: string, mode: OrderingMode): Promise<void> {
-    const config = await parseConfiguration(configPath);
+export async function watch(config: OnDemandConfiguration, mode: OrderingMode): Promise<void> {
     console.log(`Configuration loaded for parachain ${config.parachainId}, ordering from ${config.relayChain}...`);
     console.log(`Ordering Mode: ${mode}`);
 
