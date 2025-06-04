@@ -1,6 +1,6 @@
 import { program } from "commander";
 import { watch } from "./index";
-import { OrderingMode } from "./types";
+import { OrderingMode } from "./coretime/types";
 
 program.version("0.0.1")
     .description("CLI for ordering on-demand coretime for parachains")

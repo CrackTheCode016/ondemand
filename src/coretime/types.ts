@@ -33,3 +33,11 @@ export interface OnDemandConfiguration {
     // The interval in ms to check the transaction pool
     checkIntervalMs: number;
 }
+
+
+// The current state of the coretime order
+export interface CoretimeOrderState {
+    ordering: boolean;
+    coreInQueue: boolean;
+    blockCounter: number;
+}

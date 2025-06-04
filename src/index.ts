@@ -1,61 +1,11 @@
 // `dot` is the name we gave to `npx papi add`
 import { polkadot } from "@polkadot-api/descriptors"
-import { createClient, PolkadotClient } from "polkadot-api"
-import { getWsProvider } from "polkadot-api/ws-provider/node";
-import { withPolkadotSdkCompat } from "polkadot-api/polkadot-sdk-compat";
-import { OnDemandConfiguration, OrderingMode } from "./types";
-import { getPolkadotSigner } from "polkadot-api/signer";
-import { RELAY_CHAIN_URLS } from "./relay_urls";
-import fs from "fs";
-import { entropyToMiniSecret, mnemonicToEntropy, sr25519, } from "@polkadot-labs/hdkd-helpers";
-import { sr25519CreateDerive } from "@polkadot-labs/hdkd";
-
-async function withWebSocket(url: string[]): Promise<PolkadotClient> {
-    return createClient(
-        withPolkadotSdkCompat(
-            getWsProvider(url)
-        )
-    );
-}
-
-async function parseConfiguration(path: string): Promise<OnDemandConfiguration> {
-    // Read the configuration file
-    const file = await fs.promises.readFile(path, "utf-8");
-    return JSON.parse(file);
-}
-
-async function getRelayChainUrl(relayChain: string): Promise<string[]> {
-    // Map the relay chain name to its corresponding WebSocket URL
-    // Check if the relay chain is supported
-    if (!RELAY_CHAIN_URLS[relayChain]) {
-        throw new Error(`Unsupported relay chain: ${relayChain}`);
-    }
-    // Return the WebSocket URL for the specified relay chain  
-    return RELAY_CHAIN_URLS[relayChain];
-}
-
-async function orderCoretime(
-    relayChainClient: PolkadotClient,
-    parachainId: number,
-    maxAmount: number,
-    mnemonic: string) {
-    const entropy = mnemonicToEntropy(mnemonic);
-    const miniSecret = entropyToMiniSecret(entropy)
-    const derive = sr25519CreateDerive(miniSecret)
-    const account = getPolkadotSigner(
-        derive('').publicKey,
-        "Sr25519",
-        (input) => derive('').sign(input)
-    );
-
-    const relayChainApi = relayChainClient.getTypedApi(polkadot);
-    return relayChainApi.tx.OnDemand.place_order_keep_alive(
-        {
-            para_id: parachainId,
-            max_amount: BigInt(maxAmount)
-        }
-    ).signSubmitAndWatch(account);
-}
+import { PolkadotClient } from "polkadot-api"
+import { CoretimeOrderState, OrderingMode } from "./coretime/types";
+import { CoretimeOrderingStrategy } from "./coretime/strategy";
+import { BlockOrderingStrategy } from "./coretime/block";
+import { TxPoolOrderingStrategy } from "./coretime/txpool";
+import { getRelayChainUrl, parseConfiguration, withWebSocket } from "./helper";
 
 function watchCoretimeQueue(
     relayChainClient: PolkadotClient,
@@ -71,61 +21,33 @@ export async function watch(configPath: string, mode: OrderingMode): Promise<voi
     console.log(`Ordering Mode: ${mode}`);
 
     const relayChainUrl = await getRelayChainUrl(config.relayChain);
-    let blockCounter = 0;
-    let ordering = false;
-    let coreInQueue = false;
+    const orderingState: CoretimeOrderState = {
+        ordering: false,
+        coreInQueue: false,
+        blockCounter: 0,
+    }
 
-    // Watch the coretime queue
-    const wsParachainClient = await withWebSocket(config.parachainRpcUrls);
     const wsRelayChainClient = await withWebSocket(relayChainUrl);
-
     watchCoretimeQueue(wsRelayChainClient, config.parachainId).subscribe((result) => {
         console.log("Watching coretime queue...");
         if (result) {
             console.log(`Core ${result.core_index} being used`);
         } else {
             console.log(`Core no longer in use.`);
-            coreInQueue = false;
+            orderingState.coreInQueue = false;
         }
     })
 
-    const tryOrderCoretime = async () => {
-        ordering = true;
-        coreInQueue = true;
-        console.log(`Time to order more coretime!`);
-        (await orderCoretime(wsRelayChainClient, config.parachainId, config.maxAmount, config.accountMnemonic))
-            .pipe()
-            .subscribe((result) => {
-                if (result.type === "finalized") {
-                    console.log(`Coretime order finalized: ${result.txHash}`);
-                    console.log(`Parachain: ${config.parachainId}`);
-                    blockCounter = 0;
-                    ordering = false;
-                }
-            });
-    };
-
+    let strategy: CoretimeOrderingStrategy;
+    // Choose the ordering strategy based on the mode
     if (mode === OrderingMode.Block) {
-        wsRelayChainClient.finalizedBlock$.subscribe(async (block) => {
-            blockCounter++;
-            if (blockCounter >= config.maxBlocks && !ordering && !coreInQueue) {
-                await tryOrderCoretime();
-            }
-        });
+        strategy = new BlockOrderingStrategy(wsRelayChainClient, config, orderingState)
+    } else if (mode === OrderingMode.TransactionPool) {
+        const wsParachainClient = await withWebSocket(config.parachainRpcUrls);
+        strategy = new TxPoolOrderingStrategy(wsParachainClient, config, orderingState);
+    } else {
+        throw new Error("Unknown ordering mode");
     }
 
-    if (mode === OrderingMode.TransactionPool) {
-        console.log(`Watching transaction pool for ${config.maxTransactions} transactions...`);
-        console.log("Ordering initial block...")
-        await tryOrderCoretime();
-        setInterval(async () => {
-            if (!ordering && !coreInQueue) {
-                const ext = await wsParachainClient._request("author_pendingExtrinsics", []);
-                console.log(`Transaction pool size: ${ext.length}`);
-                if (ext.length >= config.maxTransactions) {
-                    await tryOrderCoretime()
-                }
-            }
-        }, config.checkIntervalMs);
-    }
+    await strategy.start();
 }
